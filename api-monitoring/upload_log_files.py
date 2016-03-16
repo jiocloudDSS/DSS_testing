@@ -3,11 +3,11 @@ import boto.s3.connection
 from boto.s3.key import Key
 import sys
 logfile = sys.argv[1]
-access_key = '0ef217eff5b146f19759532d3b6ea76a'
-secret_key = '84984692b91c4795b34c1237f4040e34'
+access_key = 
+secret_key = 
 
-aws_access_key = 'AKIAJAQT5FMK76GBRJPQ'
-aws_secret_key = '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'
+aws_access_key = 
+aws_secret_key = 
 conn = boto.connect_s3(
     aws_access_key_id = access_key,
     aws_secret_access_key = secret_key,
