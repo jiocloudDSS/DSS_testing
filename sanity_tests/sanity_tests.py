@@ -3,7 +3,10 @@ import sys
 import time
 import math
 import dssSanityLib
+import json
+import subprocess
 from boto.s3.key import Key
+from random import randint
 from filechunkio import FileChunkIO
 
 ############### MAX BUCKET LIMIT ###################
@@ -13,7 +16,7 @@ def bucketSanity():
     ## Create five buckets
     dssSanityLib.whisper("Creating buckets and putting objects in them...")
     bucketpref = dssSanityLib.getsNewBucketName()
-    dssSanityLib.createMaxBuckets(12, bucketpref)
+    dssSanityLib.createMaxBuckets(12, bucketpref,1)
 
     ## Bucket name conflict during creation
     #dssSanityLib.whisper("Trying to create a bucket with name conflict...")
@@ -39,6 +42,148 @@ def bucketSanity():
 ####################################################
 
 ############### MULTI PART UPLOAD ##################
+def crossAccountSanity():
+    x=randint(0,1000)
+    buckName='buck'+str(x)
+    userObj = dssSanityLib.getConnection(1)
+    userObj2 = dssSanityLib.getConnection(2)
+    userObj.create_bucket(buckName)
+    try:
+        userObj2.delete_bucket(buckName)
+    except:
+        print "Expected failure as permissions are not yet given to User2"
+        print "Expected error: ", sys.exc_info()
+
+    os.system("cd jcsclient")
+    #os.system("source openrc_raj1_Staging")
+    dssSanityLib.sourceCLI(1)
+
+    try:
+        command = dssSanityLib.getCreateResourcePolicyCommand(2,x)
+        ret = os.popen(command).read()
+        print ret
+        pairs=ret.split(",")
+        #print pairs[3]
+        values=pairs[2].split("\"")
+        print values[3]
+        policyId=values[3]
+        command = dssSanityLib.getAttachPolicyToResourceCommand(1,buckName,policyId)
+        ret = os.popen(command).read()
+    except:
+        print "Unexpected error in creating a policy and attaching resource to it"
+        return -1
+    dssSanityLib.sourceCLI(2)
+    command = dssSanityLib.getCreateUserPolicyCommand(1,x, buckName)
+    ret = os.popen(command).read()
+    print ret
+    pairs=ret.split(",")
+        #print pairs[3]
+    values=pairs[2].split("\"")
+    print values[3]
+    policyId1=values[3]
+    command = dssSanityLib.getAttachPolicyToUserCommand(2,policyId1)
+
+
+    print "executed command is:: "+command
+    ret = os.popen(command).read()
+
+    try:
+        userObj2.delete_bucket(buckName)
+    except:
+        print "Not able to delete bucket despite giving permissions"
+        return -1
+        print ret
+
+    try:
+        print "cleaning up"
+        command="jcs iam DeletePolicy --Id "+policyId1
+        print "executed command is:: "+command
+        ret = os.popen(command).read()
+        print ret
+        dssSanityLib.sourceCLI(1)
+        command="jcs iam DeleteResourceBasedPolicy --Id "+policyId
+        print "executed command is:: "+command
+        ret = os.popen(command).read()
+        print ret
+    except:
+        print "Error in deleting the resourceBasedPolicy"
+        return -1
+
+    bucks=userObj.get_all_buckets()
+    for bucket in bucks:
+        print "Checking for "+bucket.name
+        #userObj.delete_bucket(bucket.name)
+        if (bucket.name == buckName):
+            print "Bucket still present despite being deleted by the second account"
+            return -1
+
+
+    os.system("cd ..")
+
+    return 0
+
+
+def crossAccountInSanity():
+    x=randint(0,1000)
+    # specify the bucket name of the third account
+    buckName='buck264'
+    userObj = dssSanityLib.getConnection(1)
+    userObj2 = dssSanityLib.getConnection(2)
+    #userObj.create_bucket(buckName)
+    try:
+        b=userObj2.get_bucket(buckName)
+    except:
+        print "Expected failure as permissions are not yet given to User2"
+        print "Expected error: ", sys.exc_info()
+
+    os.system("cd jcsclient")
+    #os.system("source openrc_raj1_Staging")
+    dssSanityLib.sourceCLI(1)
+
+    try:
+        command ="jcs iam CreateResourceBasedPolicy --PolicyDocument \"{\\\"name\\\": \\\"DeleteBucket"+str(x)+"\\\", \\\"statement\\\": [{\\\"action\\\": [\\\"jrn:jcs:dss:ListBucket\\\"], \\\"principle\\\": [\\\"jrn:jcs:iam:713268835218:User:rajat\\\"], \\\"effect\\\": \\\"allow\\\"}]}\""
+        print "executed command is:: "+command
+        ret = os.popen(command).read()
+        print ret
+        pairs=ret.split(",")
+        #print pairs[3]
+        values=pairs[2].split("\"")
+        print values[3]
+        policyId=values[3]
+        command="jcs iam AttachPolicyToResource --PolicyId "+policyId+" --Resource \"{\\\"resource\\\": [\\\"jrn:jcs:dss:319505121107:Bucket:"+buckName+"\\\"]}\""
+        print "executed command is:: "+command
+        ret = os.popen(command).read()
+    except:
+        print "Unexpected error in creating a policy and attaching resource to it"
+        return -1
+    #userObj = dssSanityLib.getConnection(2)
+    try:
+        b=userObj2.get_bucket(buckName)
+    except:
+        print "Not able to get bucket despite giving permissions"
+        return -1
+        print ret
+
+    try:
+        command="jcs iam DeleteResourceBasedPolicy --Id "+policyId
+        print "executed command is:: "+command
+        ret = os.popen(command).read()
+        print ret
+    except:
+        print "Error in deleting the resourceBasedPolicy"
+        return -1
+
+    bucks=userObj.get_all_buckets()
+    for bucket in bucks:
+        print "Checking for "+bucket.name
+        #userObj.delete_bucket(bucket.name)
+        if (bucket.name == buckName):
+            print "Bucket still present despite being deleted by the second account"
+
+
+    os.system("cd ..")
+
+    return 0
 
 def multipartObjectUpload():
     result = 0
@@ -192,6 +337,8 @@ def main(argv):
     dssSanityLib.callTest(multipartObjectUpload(), "Upload object in Multiparts")
     dssSanityLib.callTest(dnsNamesTest(), "Check various DNS name rules")
     dssSanityLib.callTest(publicUrlTest(), "Public URL test")
+    dssSanityLib.callTest(crossAccountSanity(), "Giving Delete bucket permission to other account and removing policies")
+    #dssSanityLib.callTest(crossAccountInSanity(), "Giving Delete bucket permission to another account on a resource owned by a third account ")
 
     ## CLEANUP
     userObj = dssSanityLib.getConnection()

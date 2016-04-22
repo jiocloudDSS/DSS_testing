@@ -1,8 +1,10 @@
 import re
+import os
 import sys
 import time
 import boto
 import getopt
+import sys
 from boto.s3.key import Key
 from boto.s3.connection import S3Connection
 
@@ -12,7 +14,9 @@ from boto.s3.connection import S3Connection
 GLOBAL_DEBUG = 0
 MULTIPART_LARGE_FILE = ''
 RADOSHOST    = 'dss.ind-west-1.staging.jiocloudservices.com'
-RADOSPORT    = 443
+#RADOSHOST    = '10.140.214.196'
+#RADOSPORT    = '7480' 
+RADOSPORT    = '' 
 CLI_USER     = ''
 CLI_COMMAND  = ''
 COMMAND_NUM  = ''
@@ -23,12 +27,79 @@ access_key = ''
 secret_key = ''
 user_profiles = None
 isSecure   = True
+#isSecure   = False
 isAwsConn  = False
 has_incore_params = False
 
 ####################################################
 
 ################## CREATE CONNECTION ###############
+def sourceCLI(user = None):
+    global user_profiles
+    if (user is not None) and (user_profiles is not None):
+        try:
+            access_key = user_profiles[user]['access']
+            secret_key = user_profiles[user]['secret']
+            #os.system("export DSS_URL=https://dss.ind-west-1.jiocloudservices.com")
+            #os.system("export ACCESS_KEY=access_key")
+            #os.system("export SECRET_KEY=secret_key")
+            os.environ['IAM_URL']='https://iam.ind-west-1.staging.jiocloudservices.com'
+            os.environ['DSS_URL']='https://dss.ind-west-1.staging.jiocloudservices.com'
+            os.environ['ACCESS_KEY'] = access_key
+            os.environ['SECRET_KEY'] = secret_key
+        except:
+            print "Must have dsskeys file for multiuser access!"
+            return -1
+
+def getCreateResourcePolicyCommand(user = None, x=None):
+    global user_profiles
+    if (user is not None) and (user_profiles is not None):
+        try:
+            account_id = user_profiles[user]['account_id']
+            user_name = user_profiles[user]['name']
+            command ="jcs iam CreateResourceBasedPolicy --PolicyDocument \"{\\\"name\\\": \\\"DeleteBucket"+str(x)+"\\\", \\\"statement\\\": [{\\\"action\\\": [\\\"jrn:jcs:dss:DeleteBucket\\\"], \\\"principle\\\": [\\\"jrn:jcs:iam:"+account_id+":User:"+user_name+"\\\"], \\\"effect\\\": \\\"allow\\\"}]}\""
+        except:
+            print "Must have dsskeys file for multiuser access!"
+            return -1
+    print command
+    return command
+
+def getAttachPolicyToResourceCommand(user = None, buckName = None, policyId=None):
+    global user_profiles
+    if (user is not None) and (user_profiles is not None):
+        try:
+            account_id = user_profiles[user]['account_id']
+            command="jcs iam AttachPolicyToResource --PolicyId "+policyId+" --Resource \"{\\\"resource\\\": [\\\"jrn:jcs:dss:"+account_id+":Bucket:"+buckName+"\\\"]}\""
+        except:
+            print "Must have dsskeys file for multiuser access!"
+            return -1
+    print command
+    return command
+
+def getCreateUserPolicyCommand(user = None, x = None, buckName = None):
+    global user_profiles
+    if (user is not None) and (user_profiles is not None):
+        try:
+            account_id = user_profiles[user]['account_id']
+            user_name = user_profiles[user]['name']
+            command="jcs iam CreatePolicy --PolicyDocument \"{\\\"name\\\": \\\"DeleteBucket1"+str(x)+"\\\", \\\"statement\\\": [{\\\"action\\\": [\\\"jrn:jcs:dss:DeleteBucket\\\"], \\\"resource\\\": [\\\"jrn:jcs:dss:"+account_id+":Bucket:"+buckName+"\\\"], \\\"effect\\\": \\\"allow\\\"}]}\""
+        except:
+            print "Must have dsskeys file for multiuser access!"
+            return -1
+    print command
+    return command
+
+def getAttachPolicyToUserCommand(user = None, policyId=None):
+    global user_profiles
+    if (user is not None) and (user_profiles is not None):
+        try:
+            account_id = user_profiles[user]['account_id']
+            command="jcs iam AttachPolicyToUser --PolicyId "+policyId+" --UserId "+account_id
+        except:
+            print "Must have dsskeys file for multiuser access!"
+            return -1
+    print command
+    return command
 
 def getConnection(user = None):
     global has_incore_params
